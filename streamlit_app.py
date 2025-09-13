@@ -5,12 +5,6 @@ import matplotlib.pyplot as plt
 import joblib
 from tensorflow.keras.models import load_model
 
-# Load saved models and scalers
-multi_model = joblib.load('multi_model.pkl')          
-multi_scaler = joblib.load('multi_scaler.pkl')        
-dl_model = load_model('ai_sea_level_model.keras')     
-dl_scaler = joblib.load('dl_scaler.pkl')              
-
 # Page config and background styling
 st.set_page_config(page_title="Climate Tipping Point Predictor", layout="wide")
 st.markdown("""
@@ -25,19 +19,19 @@ st.markdown("""
         content: "";
         position: absolute;
         top: 0; left: 0; right: 0; bottom: 0;
-        background-color: rgba(255, 255, 255, 0.6); /* Faded white overlay */
+        background-color: rgba(255, 255, 255, 0.6);
         z-index: -1;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# Title and description
 st.title("🌍 Environmental Impact Predictor")
 st.markdown("Enter environmental parameters to predict **Temperature**, **CO₂ Emissions**, and **Sea Level Rise**.")
 
 # Sidebar inputs
 with st.sidebar:
     st.header("🔧 Input Parameters")
+    debug_mode = st.checkbox("Enable Debug Mode")
     humidity = st.number_input("Humidity", value=0.0)
     wind_speed = st.number_input("Wind Speed", value=0.0)
     solar_radiation = st.number_input("Solar Radiation", value=0.0)
@@ -50,15 +44,33 @@ with st.sidebar:
         industrial_output, vehicle_count, global_temp
     ]).reshape(1, -1)
 
+# Load models safely
+try:
+    multi_model = joblib.load('multi_model.pkl')
+    multi_scaler = joblib.load('multi_scaler.pkl')
+    dl_model = load_model('ai_sea_level_model.keras')
+    dl_scaler = joblib.load('dl_scaler.pkl')
+except Exception as e:
+    st.error(f"❌ Model loading failed: {e}")
+    st.stop()
+
 # Predict button
 if st.button("Predict"):
-    # MultiOutput ML predictions
-    scaled_ml = multi_scaler.transform(input_data)
-    ml_preds = multi_model.predict(scaled_ml)
+    try:
+        scaled_ml = multi_scaler.transform(input_data)
+        ml_preds = multi_model.predict(scaled_ml)
+    except Exception as e:
+        st.error(f"❌ ML prediction failed: {e}")
+        if debug_mode: st.exception(e)
+        st.stop()
 
-    # DL prediction for sea level rise
-    scaled_dl = dl_scaler.transform(input_data)
-    dl_pred = dl_model.predict(scaled_dl)
+    try:
+        scaled_dl = dl_scaler.transform(input_data)
+        dl_pred = dl_model.predict(scaled_dl)
+    except Exception as e:
+        st.error(f"❌ DL prediction failed: {e}")
+        if debug_mode: st.exception(e)
+        st.stop()
 
     # Display predictions
     st.subheader("📈 Predicted Values")
@@ -67,64 +79,77 @@ if st.button("Predict"):
     col2.metric("🫁 CO₂ Emissions", f"{ml_preds[0][1]:.2f}")
     col3.metric("🌊 Sea Level Rise (DL)", f"{dl_pred[0][0]:.2f}")
 
-    # Prepare data for charts
     pred_df = pd.DataFrame({
         'Target': ['Temperature', 'CO₂ Emissions', 'Sea Level Rise'],
         'Predicted Value': [ml_preds[0][0], ml_preds[0][1], dl_pred[0][0]]
     })
 
-    # Horizontal Bar Chart
-    st.subheader("📊 Prediction Overview")
-    fig1, ax1 = plt.subplots()
-    ax1.barh(pred_df['Target'], pred_df['Predicted Value'], color=['#FF6F61', '#6B5B95', '#88B04B'])
-    ax1.set_xlabel("Predicted Value")
-    ax1.set_title("Environmental Predictions Overview")
-    st.pyplot(fig1)
+    # Charts (wrapped for safety)
+    try:
+        st.subheader("📊 Prediction Overview")
+        fig1, ax1 = plt.subplots()
+        ax1.barh(pred_df['Target'], pred_df['Predicted Value'], color=['#FF6F61', '#6B5B95', '#88B04B'])
+        ax1.set_xlabel("Predicted Value")
+        ax1.set_title("Environmental Predictions Overview")
+        st.pyplot(fig1)
+    except Exception as e:
+        st.error("❌ Bar chart failed.")
+        if debug_mode: st.exception(e)
 
-    # Radar Chart
-    st.subheader("🧭 Prediction Spread (Radar View)")
-    labels = pred_df['Target'].tolist()
-    values = pred_df['Predicted Value'].tolist()
-    angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
-    values += values[:1]
-    angles += angles[:1]
+    try:
+        st.subheader("🧭 Prediction Spread (Radar View)")
+        labels = pred_df['Target'].tolist()
+        values = pred_df['Predicted Value'].tolist()
+        angles = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
+        values += values[:1]
+        angles += angles[:1]
+        fig2, ax2 = plt.subplots(subplot_kw={'polar': True})
+        ax2.plot(angles, values, color='teal', linewidth=2)
+        ax2.fill(angles, values, color='teal', alpha=0.25)
+        ax2.set_xticks(angles[:-1])
+        ax2.set_xticklabels(labels)
+        ax2.set_title("Prediction Spread", y=1.1)
+        st.pyplot(fig2)
+    except Exception as e:
+        st.error("❌ Radar chart failed.")
+        if debug_mode: st.exception(e)
 
-    fig2, ax2 = plt.subplots(subplot_kw={'polar': True})
-    ax2.plot(angles, values, color='teal', linewidth=2)
-    ax2.fill(angles, values, color='teal', alpha=0.25)
-    ax2.set_xticks(angles[:-1])
-    ax2.set_xticklabels(labels)
-    ax2.set_title("Prediction Spread", y=1.1)
-    st.pyplot(fig2)
+    try:
+        st.subheader("🌊 Sea Level Gauge")
+        fig3, ax3 = plt.subplots(figsize=(4, 2))
+        ax3.barh(['Sea Level'], [dl_pred[0][0]], color='dodgerblue')
+        ax3.set_xlim(0, 100)
+        ax3.set_title("Sea Level Rise Indicator")
+        ax3.set_xlabel("Rise (cm)")
+        st.pyplot(fig3)
+    except Exception as e:
+        st.error("❌ Gauge chart failed.")
+        if debug_mode: st.exception(e)
 
-    # Gauge-style Chart
-    st.subheader("🌊 Sea Level Gauge")
-    fig3, ax3 = plt.subplots(figsize=(4, 2))
-    ax3.barh(['Sea Level'], [dl_pred[0][0]], color='dodgerblue')
-    ax3.set_xlim(0, 100)  # Adjust based on realistic range
-    ax3.set_title("Sea Level Rise Indicator")
-    ax3.set_xlabel("Rise (cm)")
-    st.pyplot(fig3)
+    try:
+        st.subheader("🧮 Prediction Proportions")
+        fig4, ax4 = plt.subplots()
+        ax4.pie(pred_df['Predicted Value'], labels=pred_df['Target'], autopct='%1.1f%%',
+                colors=['#FF6F61', '#6B5B95', '#88B04B'], startangle=90)
+        ax4.set_title("Proportional Impact")
+        st.pyplot(fig4)
+    except Exception as e:
+        st.error("❌ Pie chart failed.")
+        if debug_mode: st.exception(e)
 
-    # Pie Chart
-    st.subheader("🧮 Prediction Proportions")
-    fig4, ax4 = plt.subplots()
-    ax4.pie(pred_df['Predicted Value'], labels=pred_df['Target'], autopct='%1.1f%%',
-            colors=['#FF6F61', '#6B5B95', '#88B04B'], startangle=90)
-    ax4.set_title("Proportional Impact")
-    st.pyplot(fig4)
-
-    # Delta Chart
-    baseline = [25, 300, 20]  # Example baseline values
-    delta_df = pd.DataFrame({
-        'Target': ['Temperature', 'CO₂ Emissions', 'Sea Level Rise'],
-        'Predicted': [ml_preds[0][0], ml_preds[0][1], dl_pred[0][0]],
-        'Baseline': baseline
-    })
-    delta_df['Delta'] = delta_df['Predicted'] - delta_df['Baseline']
-
-    st.subheader("📉 Change from Baseline")
-    st.dataframe(delta_df[['Target', 'Predicted', 'Baseline', 'Delta']])
+    try:
+        baseline = [25, 300, 20]
+        delta_df = pd.DataFrame({
+            'Target': ['Temperature', 'CO₂ Emissions', 'Sea Level Rise'],
+            'Predicted': [ml_preds[0][0], ml_preds[0][1], dl_pred[0][0]],
+            'Baseline': baseline
+        })
+        delta_df['Delta'] = delta_df['Predicted'] - delta_df['Baseline']
+        st.subheader("📉 Change from Baseline")
+        st.dataframe(delta_df[['Target', 'Predicted', 'Baseline', 'Delta']])
+    except Exception as e:
+        st.error("❌ Delta chart failed.")
+        if debug_mode: st.exception(e)
 
 # Footer
 st.markdown("---")
